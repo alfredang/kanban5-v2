@@ -1,19 +1,37 @@
-# kanban5 — IT PMO Kanban Board
+# kanban5-v2 — IT PMO Kanban Board
 
-[![CI and deploy](https://github.com/alfredang/kanban5/actions/workflows/pages.yml/badge.svg)](https://github.com/alfredang/kanban5/actions/workflows/pages.yml)
-[![Live site](https://img.shields.io/badge/live-alfredang.github.io%2Fkanban5-2ea44f)](https://alfredang.github.io/kanban5/)
+[![CI and deploy](https://github.com/alfredang/kanban5-v2/actions/workflows/pages.yml/badge.svg)](https://github.com/alfredang/kanban5-v2/actions/workflows/pages.yml)
+[![Live site](https://img.shields.io/badge/live-alfredang.github.io%2Fkanban5--v2-2ea44f)](https://alfredang.github.io/kanban5-v2/)
 
-A single-file Kanban board for tracking IT project tasks, built for a **fictitious** bank's internal demo and training use. It's vanilla HTML, CSS and JavaScript in one `index.html`, with no frameworks and no build step.
+A single-file Kanban board for tracking IT project tasks, built for a **fictitious** bank's internal demo and training use. Version 2 adds a portfolio dashboard, a project timeline, a footer and a hardened security posture. It's still vanilla HTML, CSS and JavaScript in one `index.html`, with no frameworks and no build step.
 
-**Live demo:** https://alfredang.github.io/kanban5/
+**Live demo:** https://alfredang.github.io/kanban5-v2/
 
-![IT PMO Kanban board with summary counts, filters, and Backlog, In Progress, Blocked and Done columns of ITPM task cards, two flagged overdue](docs/screenshot.png)
+![IT PMO board v2: KPI tiles for total, backlog, in-progress, blocked, done, overdue and due-in-7-days tasks; a status-mix bar, workstream bars and a needs-attention list; filters; and Backlog, In Progress, Blocked and Done columns of ITPM task cards with overdue badges](docs/screenshot.png)
+
+> Version 1 is still live at https://alfredang.github.io/kanban5/ (repo [alfredang/kanban5](https://github.com/alfredang/kanban5)).
+
+## What's new in v2
+
+- **Portfolio dashboard** at the top of the page:
+  - Large KPI tiles (total, per-status, overdue, due in the next 7 days). The Blocked and Overdue tiles turn red when they're non-zero.
+  - A status-mix bar with % complete, a per-workstream breakdown, and a **Needs attention** list of blocked or overdue tasks. Click a task to jump to its card.
+- **Project timeline:** one row per workstream, a marker per task at its due date, a week grid and a **Today** line.
+  - Markers show status by colour and shape, and overdue tasks get a red ring. Hover or focus a marker for details, or click it to jump to the card.
+  - The timeline follows the filters and has a "Show timeline as a table" view.
+- **Footer** with in-page navigation, data and privacy notes, and keyboard tips.
+- **Security hardening** (details in [SECURITY.md](SECURITY.md)):
+  - Hash-based Content-Security-Policy with no `unsafe-inline`.
+  - No referrer leaks.
+  - FormSubmit is never called while the placeholder address is set; sends time out and are throttled.
+  - Control and bidi characters are stripped from input, and dropped text is validated.
+  - SHA-pinned CI actions and extra CI scans.
+- Accessibility fixes: higher-contrast focus ring and muted text, larger close buttons, and a skip link.
 
 ## Features
 
 - Four columns: **Backlog, In Progress, Blocked, Done**. Move cards by drag-and-drop or with the keyboard-accessible **Move ▸** menu.
-- Summary strip with counts for total, per-status and overdue tasks.
-- Filters for project/workstream, assignee and priority. Column counts follow the filters, and the summary always counts every task.
+- Filters for project/workstream, assignee and priority. Column counts and the timeline follow the filters. The dashboard always counts every task.
 - An **Add Task** modal with inline validation. New tasks get `ITPM-####` IDs.
 - Deletion is confirmed inline on the card, with no browser dialogs.
 - Overdue badges. Seed due dates are relative to today, so the overdue examples always show.
@@ -44,7 +62,17 @@ Only one setting is configurable: the `FORMSUBMIT_ENDPOINT` constant at the top 
 const FORMSUBMIT_ENDPOINT = "https://formsubmit.co/ajax/YOUR_EMAIL@example.com";
 ```
 
-To use it, replace the placeholder with a real address. FormSubmit emails that address once with an activation link. Until you activate it, submissions return `success: "false"`, and the app shows a warning toast. The card is still added either way, and email subjects are prefixed with `[IT PMO]`.
+While the placeholder is in place, the app doesn't contact FormSubmit at all. It adds the card and shows a warning toast.
+
+To turn notifications on, replace the placeholder with an address. FormSubmit sends that address an activation email once, and until it's activated, submissions return `success: "false"` and the app shows a warning toast. Email subjects are prefixed with `[IT PMO]`.
+
+The endpoint is visible to anyone who views the page source, so use FormSubmit's random-string alias rather than a personal inbox. CI deliberately fails if a real address is committed. Configure it in your own deployment copy.
+
+Editing the `<script>` or `<style>` block changes the CSP hashes, so run this afterwards:
+
+```bash
+node scripts/check-csp.js --write
+```
 
 ## Tech constraints
 
@@ -57,8 +85,11 @@ To use it, replace the placeholder with a real address. FormSubmit emails that a
 
 ```
 index.html                    # The whole app: markup, <style> and <script>
+scripts/check-csp.js          # Verifies / refreshes the CSP script and style hashes
 docs/screenshot.png           # README screenshot
 .github/workflows/pages.yml   # CI and GitHub Pages deploy
+.github/dependabot.yml        # Keeps the SHA-pinned actions up to date
+SECURITY.md                   # Threat model, controls and residual risks
 CLAUDE.md                     # Architecture notes and project rules
 README.md
 ```
@@ -67,8 +98,14 @@ README.md
 
 [.github/workflows/pages.yml](.github/workflows/pages.yml) has two jobs:
 
-- **`ci`** runs on pushes and pull requests to `main`. It syntax-checks the script block with Node, runs the constraint scan from `CLAUDE.md` (only the FormSubmit URL may match) and runs a [gitleaks](https://github.com/gitleaks/gitleaks) secret scan.
-- **`deploy`** runs after `ci` passes, on pushes to `main` and manual runs. It copies `index.html` and `docs/` into `_site/` and publishes that folder to GitHub Pages. There's no build step.
+- **`ci`** runs on pushes and pull requests to `main`:
+  - Node syntax check of the script block and the CSP hash check.
+  - The constraint scan from `CLAUDE.md`: only the FormSubmit URL and the CSP `connect-src` may match.
+  - A placeholder check that the FormSubmit address is still `YOUR_EMAIL@example.com`.
+  - An HTML/JS sink scan and a [gitleaks](https://github.com/gitleaks/gitleaks) secret scan.
+- **`deploy`** runs after `ci` passes, on pushes to `main` and manual runs. It copies `index.html` and `docs/` into `_site/` and publishes that folder to GitHub Pages.
+
+All actions are pinned to commit SHAs, and the workflow runs with least-privilege permissions.
 
 ## Contributing conventions
 
@@ -76,17 +113,18 @@ The full list is in [CLAUDE.md](CLAUDE.md). The main rules:
 
 - Vanilla only: no libraries, CDNs, web fonts or image files. Use inline SVG or Unicode for icons.
 - Don't use `localStorage`, `sessionStorage`, IndexedDB or cookies.
-- Don't use `alert()` or `confirm()`, and don't use `!important`. Colours and spacing come from CSS custom properties on `:root`.
-- Pass every task field rendered into a card through `escapeHtml()`.
+- Don't use `alert()`, `confirm()` or `!important`. Colours and spacing come from CSS custom properties on `:root`.
+- Pass every task field rendered as HTML through `escapeHtml()`. Don't add inline `style=""` or `on*=` attributes, because the CSP blocks them.
 - Status keys (`backlog`, `inprogress`, `blocked`, `done`) are tied to element IDs (`list-<key>`, `count-<key>`, `sum-<key>`, `col-<key>-title`). If you change `STATUSES`, update the markup too.
 - Keep branding neutral, and keep the `ITPM-####` ID format.
 
 ## Testing
 
-There's no test suite. Check changes manually in a browser. To syntax-check the script block:
+There's no test suite. Check changes manually in a browser, then run:
 
 ```bash
 node -e "const h=require('fs').readFileSync('index.html','utf8');new Function(h.match(/<script>([\s\S]*?)<\/script>/)[1]);console.log('ok')"
+node scripts/check-csp.js
 ```
 
 ## Licence

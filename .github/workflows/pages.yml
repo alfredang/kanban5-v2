@@ -7,18 +7,22 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least privilege: read-only by default; Pages write only in the deploy job
 permissions:
   contents: read
 
+# Third-party actions are pinned to full commit SHAs (tag in the comment);
+# Dependabot (.github/dependabot.yml) proposes updates.
 jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -26,9 +30,14 @@ jobs:
         run: |
           node -e "const h=require('fs').readFileSync('index.html','utf8');new Function(h.match(/<script>([\s\S]*?)<\/script>/)[1]);console.log('ok')"
 
-      - name: Constraint scan (only the FormSubmit URL may match)
+      - name: Verify Content-Security-Policy hashes
+        run: node scripts/check-csp.js
+
+      - name: Constraint scan (only the FormSubmit URL and CSP connect-src may match)
         run: |
-          matches=$(grep -nE 'localStorage|sessionStorage|indexedDB|document\.cookie|alert\(|confirm\(|!important|UOB|https?://' index.html | grep -v 'const FORMSUBMIT_ENDPOINT = "https://formsubmit.co/ajax/' || true)
+          matches=$(grep -nE 'localStorage|sessionStorage|indexedDB|document\.cookie|alert\(|confirm\(|!important|UOB|https?://' index.html \
+            | grep -v 'const FORMSUBMIT_ENDPOINT = "https://formsubmit.co/ajax/' \
+            | grep -v '<meta http-equiv="Content-Security-Policy" content="default-src .*connect-src https://formsubmit.co;' || true)
           if [ -n "$matches" ]; then
             echo "::error::Constraint scan found disallowed content:"
             echo "$matches"
@@ -36,8 +45,23 @@ jobs:
           fi
           echo "Constraint scan clean."
 
+      - name: Placeholder check (no real FormSubmit address committed)
+        run: |
+          grep -q 'const FORMSUBMIT_ENDPOINT = "https://formsubmit.co/ajax/YOUR_EMAIL@example.com";' index.html \
+            || { echo "::error::FORMSUBMIT_ENDPOINT must stay the placeholder in commits (see SECURITY.md)."; exit 1; }
+
+      - name: HTML sink scan (no eval, document.write or inline handlers)
+        run: |
+          matches=$(grep -nE 'eval\(|new Function|document\.write|insertAdjacentHTML|outerHTML|setTimeout\(\s*["'\'']|\son[a-z]+=' index.html || true)
+          if [ -n "$matches" ]; then
+            echo "::error::Disallowed HTML/JS sink found:"
+            echo "$matches"
+            exit 1
+          fi
+          echo "Sink scan clean."
+
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -56,9 +80,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
 
       - name: Assemble site (index.html and docs/ only)
         run: |
@@ -66,9 +92,9 @@ jobs:
           cp index.html _site/
           cp -r docs _site/
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: _site
 
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
